@@ -5,7 +5,9 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-from . import smi, video, db
+import smi
+import video
+import db
 
 
 def _save_crop(frame, x, y, w, bh, out_dir, video_stem, timestamp,
