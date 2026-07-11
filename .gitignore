@@ -4,3 +4,18 @@
 # OpenCode
 .opencode
 .opencode/
+
+# Actual data
+*.mp4
+*.avi
+*.smi
+*.HTM
+Sample/
+Data/
+results/
+
+# Models
+models/
+
+# pycache
+__pycache__/

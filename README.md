@@ -31,3 +31,15 @@ For these reasons, I will try to:
 It's quite a lot of work that the police would not do, and if they did, they wouldn't give me back my 1 TB SSD, which is a fucking disgrace. But anyway, let's get to work!
 
 ## Approach
+
+
+## The Dataset
+
+Here's what we've got. This is a Samsung DVR export — confirmed by the title <title>SAMSUNG DVR: backup file list</title>.
+Key observations from INDEX.HTM:
+- 2 cameras — CAM 01 and CAM 04 (based on the table data)
+- Date range: 2026-02-22 22:00 through 2026-02-24 ~04:00 (~30 hours of footage)
+- Motion-triggered: Clips are short (mostly 1-2 minutes early on, then 1-hour blocks during daytime 07:00–18:00 on 2/23). The DVR only saved when motion was detected.
+- Filename convention: YYMMDD folder, then HHMMSSCC.avi where CC = camera number (e.g. 22000140.avi = 22:00, CAM 01, clip 140). The HHMMSS part is the clip's start time.
+- File naming shift: Around 23:24 on 2/23, the prefix changed from 22 to 23 then 23, likely a time-based rollover internally.
+- Sizes: Early clips ~36-50 MB for 1-2 min (30 MB/min), later hour-long clips are 1.9 GB (30 MB/min consistent). That's ~4 Mbps bitrate, standard for MJPEG CCTV.
