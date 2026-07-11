@@ -32,6 +32,39 @@ It's quite a lot of work that the police would not do, and if they did, they wou
 
 ## Approach
 
+**Stack:** Python, OpenCV, YOLOv8n, SQLite.
+
+**Pipeline:** Extract person crops from CCTV footage frame by frame (1 fps, motion-skip). YOLOv8n detects persons, saves cropped thumbnails + metadata into SQLite.
+
+## Project Structure
+
+```
+catch-a-thief/
+├── src/
+│   ├── pipeline.py     # CLI: YOLO detection, crop extraction, DB write
+│   ├── video.py        # Frame iteration + motion skip
+│   ├── smi.py          # .smi playlist → video file list resolution
+│   └── db.py           # SQLite init + person insert helpers
+├── models/             # yolov8n.pt (download once, gitignored)
+├── results/            # index.db + persons/ thumbnails (gitignored)
+├── requirements.txt
+└── Sample/             # test clips (gitignored)
+```
+
+## Usage
+
+```bash
+# 1. Download the YOLO model
+wget -O models/yolov8n.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Run the pipeline
+python -m src.pipeline /path/to/video_or_folder
+```
+
+Results go into `results/` (index.db + persons/thumbnails). Run from project root.
 
 ## The Dataset
 

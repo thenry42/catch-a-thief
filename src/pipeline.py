@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-from src import smi, video, db
+from . import smi, video, db
 
 
 def _save_crop(frame, x, y, w, bh, out_dir, video_stem, timestamp,
@@ -55,12 +55,12 @@ def main(args):
     total_persons = 0
 
     print("Loading YOLOv8n...")
-    yolo_model = Path(__file__).parent / "models" / "yolov8n.pt"
+    yolo_model = Path(__file__).resolve().parent.parent / "models" / "yolov8n.pt"
     yolo = YOLO(str(yolo_model))
     try:
         yolo.to("cuda")
     except Exception:
-        pass
+        print("CUDA unavailable, falling back to CPU")
 
     for vp in video_paths:
         print(f"Processing: {vp.name}")
