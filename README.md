@@ -23,7 +23,7 @@ I am personally more inclined to believe it was a worker, because:
 - My cousin might have let the thief know, without realizing it, that he would be away for studies.
 
 For these reasons, I will try to:
-- Identify every face in the video streams, hoping that my cousin might recognize someone.
+- Identify every person in the video streams, hoping that my cousin might recognize someone.
 - Find suspicious behavior like unusual movements, eye-contact with CCTV cameras, etc.
 - Target people who used the odd-numbered elevator, since the crime was committed on the 9th floor — but even then, the thief (or thieves) could have thought of that and used the stairs or the even-numbered elevator.
 - Look for events at night, though workers have the advantage of knowing the location and could act in broad daylight.
