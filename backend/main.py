@@ -68,6 +68,27 @@ def list_videos():
     return result
 
 
+@app.get("/api/files")
+def list_files(path: str = Query("")):
+    base = (DATA_DIR / path).resolve()
+    if not str(base).startswith(str(DATA_DIR.resolve()) + "/") and base != DATA_DIR.resolve():
+        raise HTTPException(403, "Path outside data directory")
+    if not base.exists() or not base.is_dir():
+        raise HTTPException(404, "Directory not found")
+    entries = []
+    for entry in sorted(base.iterdir()):
+        rel = (Path(path) / entry.name) if path else Path(entry.name)
+        entries.append({
+            "name": entry.name,
+            "path": str(rel),
+            "is_dir": entry.is_dir(),
+        })
+    parent = str(Path(path).parent) if path else ""
+    if parent == ".":
+        parent = ""
+    return {"entries": entries, "current_path": path, "parent_path": parent}
+
+
 @app.get("/api/persons")
 def query_persons(
     camera: str = None,

@@ -34,6 +34,18 @@ export interface VideoInfo {
   date: string;
 }
 
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+}
+
+export interface FileListResponse {
+  entries: FileEntry[];
+  current_path: string;
+  parent_path: string;
+}
+
 export interface Stats {
   total_persons: number;
   per_day: { date: string; count: number }[];
@@ -62,6 +74,9 @@ export interface PipelineRunParams {
 
 export const api = {
   listVideos: () => request<VideoInfo[]>("/videos"),
+
+  listFiles: (path?: string) =>
+    request<FileListResponse>(`/files?path=${encodeURIComponent(path || "")}`),
 
   queryPersons: (params: {
     camera?: string;
