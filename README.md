@@ -30,26 +30,71 @@ For these reasons, I will try to:
 
 It's quite a lot of work that the police would not do, and if they did, they wouldn't give me back my 1 TB SSD, which is a fucking disgrace. But anyway, let's get to work!
 
-## Approach
+## Stack
 
-**Stack:** Python, OpenCV, YOLOv8n, SQLite.
-
-**Pipeline:** Extract person crops from CCTV footage frame by frame (1 fps, motion-skip). YOLOv8n detects persons, saves cropped thumbnails + metadata into SQLite.
+**Backend:** FastAPI (Python), OpenCV, YOLOv8n, SQLite, GPU-accelerated via CUDA.
+**Frontend:** Vite + React + TypeScript, served by nginx.
+**Infra:** Docker Compose, nginx reverse-proxy.
 
 ## Project Structure
 
 ```
 catch-a-thief/
-├── src/
-│   ├── pipeline.py     # CLI: YOLO detection, crop extraction, DB write
-│   ├── video.py        # Frame iteration + motion skip
-│   ├── smi.py          # .smi playlist → video file list resolution
-│   └── db.py           # SQLite init + person insert helpers
-├── models/             # yolov8n.pt (download once, gitignored)
-├── results/            # index.db + persons/ thumbnails (gitignored)
-├── requirements.txt
-└── Sample/             # test clips (gitignored)
+├── docker-compose.yml
+├── backend/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── main.py              # FastAPI app (8 REST endpoints)
+│   └── pipeline/            # detection code
+│       ├── pipeline.py      # YOLO detection, crop extraction, DB write
+│       ├── video.py         # frame iteration + motion skip
+│       └── db.py            # SQLite helpers
+├── frontend/
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── index.html
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       ├── api/client.ts
+│       ├── pages/
+│       │   ├── Dashboard.tsx     # stats
+│       │   ├── Browse.tsx        # person gallery
+│       │   ├── Timeline.tsx      # date range view
+│       │   └── PipelineConfig.tsx # run with params
+│       └── components/
+│           └── PersonCard.tsx
+├── models/                 # yolov8n.pt (gitignored)
+├── results/                # index.db + persons/ thumbnails (gitignored)
+└── Sample/                 # CCTV footage mount (gitignored)
 ```
+
+## Prerequisites
+
+- **Docker** with Compose plugin
+- **NVIDIA GPU + drivers** (optional — pipeline auto-falls back to CPU)
+
+### GPU setup (once)
+
+```bash
+# Fedora: install nvidia-container-toolkit
+sudo dnf config-manager --add-repo \
+  https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+sudo dnf install -y nvidia-container-toolkit
+
+# Other distros: see https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+
+# Enable Docker CDI + generate GPU specs
+sudo tee /etc/docker/daemon.json <<<'{"features":{"cdi":true}}'
+sudo systemctl restart docker
+sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+```
+
+### CPU-only machines
+
+Remove the `devices:` block from `docker-compose.yml` — the pipeline detects GPU absence and runs on CPU.
 
 ## Usage
 
@@ -57,22 +102,36 @@ catch-a-thief/
 # 1. Download the YOLO model
 wget -O models/yolov8n.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
 
-# 2. Install dependencies
-pip install -r requirements.txt
+# 2. Place CCTV footage in Sample/ (or mount elsewhere)
 
-# 3. Run the pipeline
-python -m src.pipeline /path/to/video_or_folder
+# 3. Start everything
+docker compose up
+
+# 4. Open http://localhost:80
 ```
 
-Results go into `results/` (index.db + persons/thumbnails). Run from project root.
+Frontend at http://localhost:80. API at http://localhost:8000 (or proxied through nginx).
+
+## API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/videos` | List available `.avi` files by date |
+| GET | `/api/persons` | Query persons (camera, date range, page) |
+| GET | `/api/persons/{id}/image` | Serve crop thumbnail |
+| DELETE | `/api/persons/{id}` | Delete a person entry + crop |
+| DELETE | `/api/persons` | Batch delete (by date range, camera) |
+| POST | `/api/pipeline/run` | Trigger pipeline with params |
+| GET | `/api/pipeline/status` | Check if pipeline is running |
+| GET | `/api/stats` | Summary stats (total, per day, per camera) |
+
+Pipeline params: `input`, `interval`, `motion_threshold`, `person_threshold`, `crop_padding`, `clear_existing`.
 
 ## The Dataset
 
-Here's what we've got. This is a Samsung DVR export — confirmed by the title <title>SAMSUNG DVR: backup file list</title>.
-Key observations from INDEX.HTM:
-- 2 cameras — CAM 01 and CAM 04 (based on the table data)
-- Date range: 2026-02-22 22:00 through 2026-02-24 ~04:00 (~30 hours of footage)
-- Motion-triggered: Clips are short (mostly 1-2 minutes early on, then 1-hour blocks during daytime 07:00–18:00 on 2/23). The DVR only saved when motion was detected.
-- Filename convention: YYMMDD folder, then HHMMSSCC.avi where CC = camera number (e.g. 22000140.avi = 22:00, CAM 01, clip 140). The HHMMSS part is the clip's start time.
-- File naming shift: Around 23:24 on 2/23, the prefix changed from 22 to 23 then 23, likely a time-based rollover internally.
-- Sizes: Early clips ~36-50 MB for 1-2 min (30 MB/min), later hour-long clips are 1.9 GB (30 MB/min consistent). That's ~4 Mbps bitrate, standard for MJPEG CCTV.
+Samsung DVR export — confirmed by the title `<title>SAMSUNG DVR: backup file list</title>`.
+- 2 cameras — CAM 01 and CAM 04
+- Date range: 2026-02-22 22:00 through 2026-02-24 ~04:00 (~30 hours)
+- Motion-triggered clips (1-2 min early on, 1-hour blocks during daytime)
+- Filename convention: `YYMMDD/HHMMSSCC.avi` (CC = camera number)
+- ~4 Mbps MJPEG bitrate

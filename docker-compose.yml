@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: ./backend
+    devices:
+      - nvidia.com/gpu=all
+    volumes:
+      - ./results:/app/results
+      - ./Sample:/data
+      - ./models:/app/models
+      - ./backend:/app          # dev: live code reload
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
