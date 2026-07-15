@@ -9,50 +9,65 @@ export function Dashboard() {
     api.stats().then(setStats).catch(console.error);
   }, []);
 
-  if (!stats) return <div>Loading...</div>;
+  if (!stats) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2rem 0" }}>
+        <div className="radar-spinner" />
+        <span className="loading-pulse" style={{ color: "var(--text-dim)", fontSize: 13 }}>ACQUIRING DATA...</span>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <h2>Dashboard</h2>
-      <div style={{ fontSize: 24, fontWeight: "bold", margin: "1rem 0" }}>
-        Total Persons: {stats.total_persons}
+      <div className="stat-card" style={{ maxWidth: 320, marginBottom: "1.5rem" }}>
+        <div style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>
+          Total Persons Detected
+        </div>
+        <div style={{ fontSize: 40, fontWeight: 700, color: "var(--accent)" }}>
+          {stats.total_persons}
+        </div>
       </div>
 
-      <h3>Per Day</h3>
-      <table style={{ borderCollapse: "collapse", width: "100%", maxWidth: 400 }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: 8 }}>Date</th>
-            <th style={{ padding: 8 }}>Count</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stats.per_day.map((d) => (
-            <tr key={d.date} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: 8 }}>{d.date}</td>
-              <td style={{ padding: 8 }}>{d.count}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ fontSize: 13, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+            Per Day
+          </h3>
+          <table className="data-table" style={{ maxWidth: 400 }}>
+            <thead>
+              <tr><th>Date</th><th>Count</th></tr>
+            </thead>
+            <tbody>
+              {stats.per_day.map((d) => (
+                <tr key={d.date}>
+                  <td>{d.date}</td>
+                  <td style={{ color: "var(--accent)", fontWeight: 600 }}>{d.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      <h3>Per Camera</h3>
-      <table style={{ borderCollapse: "collapse", width: "100%", maxWidth: 400 }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: 8 }}>Camera</th>
-            <th style={{ padding: 8 }}>Count</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stats.per_camera.map((c) => (
-            <tr key={c.camera} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: 8 }}>{c.camera}</td>
-              <td style={{ padding: 8 }}>{c.count}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        <div>
+          <h3 style={{ fontSize: 13, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+            Per Camera
+          </h3>
+          <table className="data-table" style={{ maxWidth: 400 }}>
+            <thead>
+              <tr><th>Camera</th><th>Count</th></tr>
+            </thead>
+            <tbody>
+              {stats.per_camera.map((c) => (
+                <tr key={c.camera}>
+                  <td>CAM {c.camera}</td>
+                  <td style={{ color: "var(--accent)", fontWeight: 600 }}>{c.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

@@ -5,25 +5,43 @@ interface PersonCardProps {
   timestamp: number;
   quality: number;
   onDelete: (id: number) => void;
+  onImageClick?: () => void;
 }
 
-export function PersonCard({ id, imageUrl, camera, timestamp, quality, onDelete }: PersonCardProps) {
+export function PersonCard({ id, imageUrl, camera, timestamp, quality, onDelete, onImageClick }: PersonCardProps) {
   const date = new Date(timestamp * 1000).toLocaleString();
   return (
-    <div style={{ border: "1px solid #ddd", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
-      <img src={imageUrl} alt={`Person ${id}`} style={{ width: "100%", height: 180, objectFit: "cover" }} />
-      <div style={{ padding: "0.5rem", fontSize: 13 }}>
-        <div><strong>{camera}</strong></div>
-        <div style={{ color: "#666" }}>{date}</div>
-        <div style={{ color: "#666" }}>conf: {quality.toFixed(2)}</div>
+    <div style={{
+      border: "1px solid var(--border)",
+      borderRadius: 6,
+      overflow: "hidden",
+      background: "var(--bg-surface)",
+    }}>
+      <div
+        className="scan-overlay"
+        style={{ width: "100%", height: 180, cursor: "pointer" }}
+        onClick={onImageClick}
+      >
+        <img
+          src={imageUrl}
+          alt={`Person ${id}`}
+          style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(0.9) contrast(1.1)" }}
+        />
+      </div>
+      <div style={{ padding: "0.5rem", fontSize: 12 }}>
+        <div style={{ color: "var(--accent)", fontWeight: 600, fontSize: 11, marginBottom: 2 }}>
+          CAM {camera}
+        </div>
+        <div style={{ color: "var(--text-dim)" }}>{date}</div>
+        <div style={{ color: "var(--accent)" }}>
+          conf: {quality.toFixed(2)}
+        </div>
         <button
           onClick={() => onDelete(id)}
-          style={{
-            marginTop: 4, padding: "2px 8px", border: "1px solid #ccc",
-            borderRadius: 4, background: "#fef0f0", cursor: "pointer", fontSize: 12,
-          }}
+          className="btn-danger"
+          style={{ marginTop: 6 }}
         >
-          Delete
+          DELETE
         </button>
       </div>
     </div>

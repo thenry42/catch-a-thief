@@ -69,32 +69,37 @@ export function PipelineConfig() {
 
   return (
     <div>
-      <h2>Pipeline Configuration</h2>
+      <h2 style={{ fontSize: 16, color: "var(--accent)", fontWeight: 600, marginBottom: "1rem", letterSpacing: "0.5px" }}>
+        PIPELINE CONFIGURATION
+      </h2>
 
-      <div style={{ maxWidth: 500, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        <label>
-          Input path:
-          <input value={input} onChange={(e) => setInput(e.target.value)} style={inputStyle} />
+      <div style={{ maxWidth: 520, display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          INPUT PATH
+          <input value={input} onChange={(e) => setInput(e.target.value)} className="terminal-input" />
         </label>
 
-        <div style={browserBox}>
+        <div style={{
+          border: "1px solid var(--border)",
+          borderRadius: 4,
+          padding: 10,
+          background: "var(--bg-surface)",
+        }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>
+            <span style={{ color: "var(--accent)", fontSize: 12, fontWeight: 500 }}>
               /data{currentPath && `/${currentPath}`}
             </span>
             <div style={{ display: "flex", gap: 4 }}>
               {currentPath !== "" && (
-                <button onClick={() => navigate(parentPath)} style={upBtn}>
-                  ↑ Up
-                </button>
+                <button onClick={() => navigate(parentPath)} className="btn-small">↑ UP</button>
               )}
-              <button onClick={() => navigate(currentPath, true)} style={upBtn}>
-                ↻
-              </button>
+              <button onClick={() => navigate(currentPath, true)} className="btn-small">↻</button>
             </div>
           </div>
           <div style={{ maxHeight: 200, overflowY: "auto" }}>
-            {entries.filter((e) => e.is_dir || e.name.endsWith(".avi")).length === 0 && <p style={{ margin: 0, color: "#888", fontSize: 13 }}>Empty directory</p>}
+            {entries.filter((e) => e.is_dir || e.name.endsWith(".avi")).length === 0 && (
+              <p style={{ margin: 0, color: "var(--text-dim)", fontSize: 12 }}>Empty directory</p>
+            )}
             {entries
               .filter((e) => e.is_dir || e.name.endsWith(".avi"))
               .map((e) => {
@@ -104,12 +109,18 @@ export function PipelineConfig() {
                     key={e.path}
                     onClick={() => selectItem(e)}
                     style={{
-                      ...entryRow,
-                      background: selected ? "#e3f2fd" : "transparent",
-                      fontWeight: e.is_dir ? 600 : 400,
+                      padding: "5px 8px",
+                      fontSize: 12,
+                      cursor: "pointer",
+                      borderRadius: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      background: selected ? "var(--accent-dim)" : "transparent",
+                      color: selected ? "var(--accent)" : e.is_dir ? "var(--text-primary)" : "var(--text-dim)",
                     }}
                   >
-                    <span style={{ marginRight: 6 }}>{e.is_dir ? "📁" : "🎬"}</span>
+                    <span>{e.is_dir ? "📁" : "🎬"}</span>
                     {e.name}
                   </div>
                 );
@@ -117,70 +128,79 @@ export function PipelineConfig() {
           </div>
         </div>
 
-        <label>
-          Interval (seconds):
-          <input type="number" step="0.1" value={interval} onChange={(e) => setInterval(e.target.value)} style={inputStyle} />
+        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          INTERVAL (seconds)
+          <input type="number" step="0.1" value={interval} onChange={(e) => setInterval(e.target.value)} className="terminal-input" />
         </label>
-        <label>
-          Motion threshold:
-          <input type="number" step="0.0001" value={motionThreshold} onChange={(e) => setMotionThreshold(e.target.value)} style={inputStyle} />
+        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          MOTION THRESHOLD
+          <input type="number" step="0.0001" value={motionThreshold} onChange={(e) => setMotionThreshold(e.target.value)} className="terminal-input" />
         </label>
-        <label>
-          Person threshold:
-          <input type="number" step="0.05" min="0" max="1" value={personThreshold} onChange={(e) => setPersonThreshold(e.target.value)} style={inputStyle} />
+        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          PERSON THRESHOLD
+          <input type="number" step="0.05" min="0" max="1" value={personThreshold} onChange={(e) => setPersonThreshold(e.target.value)} className="terminal-input" />
         </label>
-        <label>
-          Crop padding:
-          <input type="number" step="0.1" value={cropPadding} onChange={(e) => setCropPadding(e.target.value)} style={inputStyle} />
+        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          CROP PADDING
+          <input type="number" step="0.1" value={cropPadding} onChange={(e) => setCropPadding(e.target.value)} className="terminal-input" />
         </label>
 
         <button
           onClick={handleRun}
           disabled={running}
-          style={{
-            padding: "10px 20px", background: running ? "#ccc" : "#007bff",
-            color: "#fff", border: "none", borderRadius: 6, cursor: running ? "not-allowed" : "pointer",
-            fontSize: 16, marginTop: 8,
-          }}
+          className="btn-primary"
+          style={{ alignSelf: "flex-start" }}
         >
-          {running ? "Running..." : "Run Pipeline"}
+          {running ? "RUNNING..." : "RUN PIPELINE"}
         </button>
 
-        {error && <p style={{ color: "#c00", margin: 0 }}>{error}</p>}
+        {error && <p style={{ color: "var(--danger)", fontSize: 12, margin: 0 }}>{error}</p>}
       </div>
 
       {status && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <h3>Status</h3>
-          <p>Running: {status.running ? "Yes" : "No"}</p>
-          {status.last_run && <p>Last run: {status.last_run}</p>}
-          {status.progress && (
-            <p>
-              Progress: {status.progress.current}/{status.progress.total} — {status.progress.video}
-              ({status.progress.persons_found} persons found so far)
-            </p>
-          )}
+        <div style={{ marginTop: "1.5rem", padding: "1rem", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-surface)" }}>
+          <h3 style={{ fontSize: 13, color: "var(--accent)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            Pipeline Status
+          </h3>
+          <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div>
+              <span style={{ color: "var(--text-dim)" }}>Running: </span>
+              <span style={{ color: status.running ? "var(--accent)" : "var(--text-dim)" }}>
+                {status.running ? "TRUE" : "FALSE"}
+              </span>
+            </div>
+            {status.last_run && (
+              <div>
+                <span style={{ color: "var(--text-dim)" }}>Last run: </span>
+                <span>{status.last_run}</span>
+              </div>
+            )}
+            {status.progress && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ color: "var(--text-dim)" }}>
+                    {status.progress.video}
+                  </span>
+                  <span style={{ color: "var(--accent)" }}>
+                    {status.progress.current}/{status.progress.total}
+                  </span>
+                </div>
+                <div style={{ height: 4, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${(status.progress.current / status.progress.total) * 100}%`,
+                    background: "var(--accent)",
+                    transition: "width 0.5s",
+                  }} />
+                </div>
+                <div style={{ color: "var(--text-dim)", marginTop: 4 }}>
+                  {status.progress.persons_found} persons found
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  display: "block", width: "100%", padding: 6, border: "1px solid #ccc",
-  borderRadius: 4, marginTop: 4, boxSizing: "border-box",
-};
-
-const browserBox: React.CSSProperties = {
-  border: "1px solid #ccc", borderRadius: 4, padding: 8, background: "#fafafa",
-};
-
-const upBtn: React.CSSProperties = {
-  padding: "2px 8px", fontSize: 12, border: "1px solid #ccc",
-  borderRadius: 3, background: "#fff", cursor: "pointer",
-};
-
-const entryRow: React.CSSProperties = {
-  padding: "4px 6px", fontSize: 13, cursor: "pointer", borderRadius: 3,
-  display: "flex", alignItems: "center",
-};

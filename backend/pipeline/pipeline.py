@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-from . import video, db
+from . import video, db, smi
 
 
 def _save_crop(frame, x, y, w, bh, out_dir, video_stem, timestamp,
@@ -55,8 +55,10 @@ def run_pipeline(out_dir, video_paths, interval=1.0, motion_threshold=0.001,
     for idx, vp in enumerate(video_paths):
         if progress_callback:
             progress_callback(idx, len(video_paths), vp.name, total_persons)
+        smi_info = smi.parse_smi(smi.find_smi(vp))
+        video_start = smi_info["start_time"] if smi_info else 0
         person_count = 0
-        for ts, frame in video.iter_frames(vp, interval, motion_threshold):
+        for rel_ts, frame in video.iter_frames(vp, interval, motion_threshold):
             results = yolo(frame, verbose=False, classes=[0])[0]
             for bidx, box in enumerate(results.boxes):
                 conf = float(box.conf[0])
@@ -64,13 +66,14 @@ def run_pipeline(out_dir, video_paths, interval=1.0, motion_threshold=0.001,
                     continue
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 w, bh = x2 - x1, y2 - y1
+                abs_ts = video_start + rel_ts
                 crop_name = _save_crop(
                     frame, x1, y1, w, bh,
-                    persons_dir, vp.stem, ts, bidx, crop_padding,
+                    persons_dir, vp.stem, abs_ts, bidx, crop_padding,
                 )
                 if crop_name is None:
                     continue
-                db.insert_person(conn, vp.name, ts, crop_name, conf)
+                db.insert_person(conn, vp.name, abs_ts, crop_name, conf)
                 person_count += 1
                 total_persons += 1
         conn.commit()

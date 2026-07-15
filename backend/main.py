@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from pipeline import pipeline, db
+from pipeline import pipeline, db, smi
 
 app = FastAPI()
 
@@ -33,8 +33,8 @@ def _build_person_query(camera, date_from, date_to):
     where = []
     params = []
     if camera:
-        where.append("video_path LIKE ?")
-        params.append(f"{camera}.%")
+        where.append("SUBSTR(video_path, 5, 2) = ?")
+        params.append(camera)
     if date_from:
         where.append("timestamp_sec >= ?")
         params.append(_date_to_sec(date_from))
@@ -45,11 +45,30 @@ def _build_person_query(camera, date_from, date_to):
     return where_clause, params
 
 
+def _camera_from_stem(video_path):
+    stem = Path(video_path).stem
+    return stem[4:6] if len(stem) >= 6 else stem
+
+
 def _get_db():
     db_path = RESULTS_DIR / "index.db"
     if not db_path.exists():
         return None
     return db.init_db(db_path)
+
+
+def _video_meta(video_path):
+    smi_info = smi.parse_smi(smi.find_smi(video_path))
+    if smi_info:
+        return {
+            "camera": smi_info["camera"],
+            "date": smi_info["start_dt"].strftime("%Y-%m-%d"),
+        }
+    stem = video_path.stem
+    return {
+        "camera": stem[4:6] if len(stem) >= 6 else stem,
+        "date": str(date.fromtimestamp(video_path.stat().st_mtime)),
+    }
 
 
 @app.get("/api/videos")
@@ -60,10 +79,12 @@ def list_videos():
     result = []
     for v in videos:
         rel = v.relative_to(DATA_DIR)
+        meta = _video_meta(v)
         result.append({
             "path": str(rel),
             "name": v.name,
-            "date": str(date.fromtimestamp(v.stat().st_mtime)),
+            "date": meta["date"],
+            "camera": meta["camera"],
         })
     return result
 
@@ -118,7 +139,7 @@ def query_persons(
             "timestamp_sec": r[2],
             "frame_path": r[3],
             "quality_score": r[4],
-            "camera": Path(r[1]).stem,
+            "camera": _camera_from_stem(r[1]),
         }
         for r in rows
     ]
@@ -270,7 +291,7 @@ def stats():
     return {
         "total_persons": total,
         "per_day": [{"date": r[0], "count": r[1]} for r in per_day],
-        "per_camera": [{"camera": Path(r[0]).stem, "count": r[1]} for r in per_camera],
+        "per_camera": [{"camera": _camera_from_stem(r[0]), "count": r[1]} for r in per_camera],
     }
 
 
