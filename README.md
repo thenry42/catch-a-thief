@@ -1,40 +1,30 @@
 # Catch a Thief
 
-## Context
+Real-world person detection pipeline for 640+ GB of Samsung DVR CCTV footage (13 days, 2 cameras). Built to help identify a burglary suspect in a high-traffic building entrance.
 
-A little fucker decided to commit a burglary in my building and steal some valuables from the apartment of my cousin. We managed to retrieve the CCTV footage of the building (2 video streams), according to regulations and the approval of the landlords. I was tasked to isolate faces and timestamps of the visitors to try and catch the thief.
+**Status:** 3/13 days analyzed, 12,000+ persons detected so far.
 
-A few problems:
-- The burglary was committed over a 2-week period, without any way of knowing when it started or ended.
-- There are 2 video streams to analyze.
-- The total file size is more than 640 GB.
-- The entrances are used by at least 3 buildings of 15 floors. On top of that, a private school is located inside. On top of that, most of these buildings are under renovation, so many entrances are always open and workers are coming and going all the time.
+## Why This Is Interesting
 
-Realistically, I don't see how I could find the thief among thousands of faces to compare, but what makes this burglary unique is that only one apartment was targeted and it almost never happened before, according to the janitor. The door was reinforced and only a few small (but valuable) items were stolen.
+This isn't a Kaggle dataset with clean labels. It's a messy, real-world surveillance problem:
 
-My cousin's theory is that he knows the thief, because:
-- Only one apartment was targeted.
-- The thief knew he was away from home for a while.
-- The thief knew what to steal.
+- **No ground truth** — no labeled data, no test set, just raw footage and a hunch
+- **Samsung DVR quirks** — metadata lives in `.smi` subtitle files (parsed with regex), not in video headers. Filenames encode camera number (`YYMMDD/HHMMSSCC.avi`)
+- **Motion-triggered clips** — variable-length clips (1 min early on, 1-hour blocks daytime). Frame-differencing at 1 fps avoids re-processing near-identical frames across 640+ GB
+- **Low-res entrance CCTV** — too grainy for face detection. Person detection (YOLOv8n) is the right level. 2 cameras cover the same entrance from different angles
+- **Scale** — 13 days, 640+ GB, thousands of people passing through. 3 buildings + school + construction workers = constant traffic
 
-I am personally more inclined to believe it was a worker, because:
-- Breaking an armored door is no easy task. Police said this particular one was fairly easy to break into, but even knowing that requires skills and knowledge.
-- A lot of renovation work is being done (ventilation, insulation, etc.), so lately we've had many workers coming and going inside apartments.
-- My cousin might have let the thief know, without realizing it, that he would be away for studies.
+## Background
 
-For these reasons, I will try to:
-- Identify every person in the video streams, hoping that my cousin might recognize someone.
-- Find suspicious behavior like unusual movements, eye-contact with CCTV cameras, etc.
-- Target people who used the odd-numbered elevator, since the crime was committed on the 9th floor — but even then, the thief (or thieves) could have thought of that and used the stairs or the even-numbered elevator.
-- Look for events at night, though workers have the advantage of knowing the location and could act in broad daylight.
+A burglary was committed in my cousin's apartment. The door was reinforced and only one apartment was targeted — the thief knew what to steal and when the occupant would be away. The police don't have the resources to process 640 GB of CCTV, so this project fills that gap.
 
-It's quite a lot of work that the police would not do, and if they did, they wouldn't give me back my 1 TB SSD, which is a fucking disgrace. But anyway, let's get to work!
+My cousin believes it's someone he knows. The alternative theory is a construction worker (there's major renovation in the building). Either way, the goal is the same: identify every person who entered over 13 days and give my cousin a chance to recognize the thief.
 
 ## Stack
 
-**Backend:** FastAPI (Python), OpenCV, YOLOv8n, SQLite, GPU-accelerated via CUDA.
-**Frontend:** Vite + React + TypeScript, served by nginx.
-**Infra:** Docker Compose, nginx reverse-proxy.
+- **Backend:** FastAPI (Python), OpenCV 5, Ultralytics YOLOv8n, SQLite
+- **Frontend:** Vite 8 + React 19 + TypeScript 6, served by nginx
+- **Infra:** Docker Compose, nginx reverse-proxy, GPU passthrough via NVIDIA Container Toolkit (CDI), auto-fallback to CPU
 
 ## Project Structure
 
@@ -44,11 +34,12 @@ catch-a-thief/
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── main.py              # FastAPI app (8 REST endpoints)
-│   └── pipeline/            # detection code
+│   ├── main.py              # FastAPI app (11 REST endpoints)
+│   └── pipeline/
 │       ├── pipeline.py      # YOLO detection, crop extraction, DB write
 │       ├── video.py         # frame iteration + motion skip
-│       └── db.py            # SQLite helpers
+│       ├── db.py            # SQLite helpers
+│       └── smi.py           # Samsung DVR SMI subtitle parser
 ├── frontend/
 │   ├── Dockerfile
 │   ├── nginx.conf
@@ -60,14 +51,14 @@ catch-a-thief/
 │       ├── App.tsx
 │       ├── api/client.ts
 │       ├── pages/
-│       │   ├── Dashboard.tsx     # stats
-│       │   ├── Browse.tsx        # person gallery
-│       │   ├── Timeline.tsx      # date range view
-│       │   └── PipelineConfig.tsx # run with params
+│       │   ├── Dashboard.tsx         # stats overview
+│       │   ├── AnalysisBrowser.tsx   # gallery with filter + pagination
+│       │   ├── Timeline.tsx          # date range view
+│       │   └── PipelineConfig.tsx    # run pipeline with params
 │       └── components/
 │           └── PersonCard.tsx
 ├── models/                 # yolov8n.pt (gitignored)
-├── results/                # index.db + persons/ thumbnails (gitignored)
+├── Analysis/               # SQLite DBs + crop thumbnails (gitignored)
 └── CCTV/                   # CCTV footage mount (gitignored)
 ```
 
@@ -117,21 +108,36 @@ Frontend at http://localhost:80. API at http://localhost:8000 (or proxied throug
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/videos` | List available `.avi` files by date |
-| GET | `/api/persons` | Query persons (camera, date range, page) |
-| GET | `/api/persons/{id}/image` | Serve crop thumbnail |
-| DELETE | `/api/persons/{id}` | Delete a person entry + crop |
-| DELETE | `/api/persons` | Batch delete (by date range, camera) |
+| GET | `/api/files` | Browse CCTV directory tree |
+| GET | `/api/analysis/tree` | Analysis tree with person counts per camera/date |
+| GET | `/api/source/tree` | Source video tree grouped by camera/date |
+| GET | `/api/persons` | Query persons (camera, date, page) |
+| GET | `/api/persons/{camera}/{date}/{person_id}/image` | Serve crop thumbnail |
+| DELETE | `/api/persons/{camera}/{date}/{person_id}` | Delete person entry + crop |
+| DELETE | `/api/persons` | Batch delete (by camera, date) |
 | POST | `/api/pipeline/run` | Trigger pipeline with params |
 | GET | `/api/pipeline/status` | Check if pipeline is running |
 | GET | `/api/stats` | Summary stats (total, per day, per camera) |
 
-Pipeline params: `input`, `interval`, `motion_threshold`, `person_threshold`, `crop_padding`, `clear_existing`.
+Pipeline params: `camera`, `date`, `interval`, `motion_threshold`, `person_threshold`, `crop_padding`.
+
+## Detection Pipeline
+
+Per video:
+1. Frame skipping at configured interval (default 1 fps)
+2. Frame-differencing motion filter — skips static frames
+3. YOLOv8n inference (person class only, `classes=[0]`)
+4. Confidence threshold filter (default 0.5)
+5. Padded crop with red bounding box
+6. Insert into per-date SQLite database
 
 ## The Dataset
 
-Samsung DVR export — confirmed by the title `<title>SAMSUNG DVR: backup file list</title>`.
-- 2 cameras — CAM 01 and CAM 04
-- Date range: 2026-02-22 22:00 through 2026-02-24 ~04:00 (~30 hours)
-- Motion-triggered clips (1-2 min early on, 1-hour blocks during daytime)
-- Filename convention: `YYMMDD/HHMMSSCC.avi` (CC = camera number)
-- ~4 Mbps MJPEG bitrate
+- **Source:** Samsung DVR export (`<title>SAMSUNG DVR: backup file list</title>` in INDEX.HTM)
+- **Cameras:** 2 — CAM 01 and CAM 04
+- **Date range:** 2026-02-22 through 2026-03-06 (13 days, motion-triggered clips)
+- **Size:** 640+ GB total
+- **Format:** Motion JPEG AVI at ~4 Mbps, paired `.smi` subtitle files with metadata
+- **Naming:** `YYMMDD/HHMMSSCC.avi` (CC = camera number)
+- **Traffic:** 3 buildings (15 floors each) + private school + construction workers
+- **Resolution:** Too low for reliable face detection
