@@ -1,5 +1,4 @@
 import cv2
-import shutil
 from pathlib import Path
 
 from ultralytics import YOLO
@@ -27,21 +26,10 @@ def _save_crop(frame, x, y, w, bh, out_dir, video_stem, timestamp,
 
 
 def run_pipeline(out_dir, video_paths, interval=1.0, motion_threshold=0.001,
-                 person_threshold=0.5, crop_padding=1.0, clear_existing=True,
+                 person_threshold=0.5, crop_padding=1.0,
                  models_dir=None, progress_callback=None):
     out_dir = Path(out_dir)
-    db_path = out_dir / "index.db"
-    persons_dir = out_dir / "persons"
-    if clear_existing:
-        if db_path.exists():
-            db_path.unlink(missing_ok=True)
-        if persons_dir.exists():
-            shutil.rmtree(persons_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    persons_dir.mkdir(parents=True, exist_ok=True)
-
-    conn = db.init_db(db_path)
-
+    conns = {}
     total_persons = 0
 
     if models_dir is None:
@@ -55,8 +43,27 @@ def run_pipeline(out_dir, video_paths, interval=1.0, motion_threshold=0.001,
     for idx, vp in enumerate(video_paths):
         if progress_callback:
             progress_callback(idx, len(video_paths), vp.name, total_persons)
-        smi_info = smi.parse_smi(smi.find_smi(vp))
-        video_start = smi_info["start_time"] if smi_info else 0
+        meta = smi.video_meta(vp)
+        camera = meta["camera"]
+        date_str = meta["date"]
+        video_start = meta["start_time"]
+
+        vid_dir = out_dir / f"CAM{camera}" / date_str
+        db_path = vid_dir / "index.db"
+        persons_dir = vid_dir / "persons"
+
+        key = (camera, date_str)
+        vid_dir.mkdir(parents=True, exist_ok=True)
+        persons_dir.mkdir(parents=True, exist_ok=True)
+
+        if key not in conns:
+            conns[key] = db.init_db(db_path)
+        conn = conns[key]
+
+        crop_names = db.delete_video_results(conn, vp.name)
+        for cn in crop_names:
+            (persons_dir / cn).unlink(missing_ok=True)
+
         person_count = 0
         for rel_ts, frame in video.iter_frames(vp, interval, motion_threshold):
             results = yolo(frame, verbose=False, classes=[0])[0]
@@ -78,5 +85,6 @@ def run_pipeline(out_dir, video_paths, interval=1.0, motion_threshold=0.001,
                 total_persons += 1
         conn.commit()
 
-    conn.close()
+    for conn in conns.values():
+        conn.close()
     return total_persons

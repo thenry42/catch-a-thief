@@ -19,6 +19,7 @@ export interface Person {
   frame_path: string;
   quality_score: number;
   camera: string;
+  date: string;
 }
 
 export interface PersonsResponse {
@@ -64,12 +65,31 @@ export interface PipelineStatus {
 }
 
 export interface PipelineRunParams {
-  input: string;
   interval?: number;
   motion_threshold?: number;
   person_threshold?: number;
   crop_padding?: number;
-  clear_existing?: boolean;
+  camera?: string;
+  date?: string;
+}
+
+export interface CameraNode {
+  camera: string;
+  total: number;
+  dates: { date: string; count: number }[];
+}
+
+export interface AnalysisTree {
+  cameras: CameraNode[];
+}
+
+export interface SourceTreeCamera {
+  camera: string;
+  dates: string[];
+}
+
+export interface SourceTree {
+  cameras: SourceTreeCamera[];
 }
 
 export const api = {
@@ -78,10 +98,11 @@ export const api = {
   listFiles: (path?: string) =>
     request<FileListResponse>(`/files?path=${encodeURIComponent(path || "")}`),
 
+  analysisTree: () => request<AnalysisTree>("/analysis/tree"),
+
   queryPersons: (params: {
     camera?: string;
-    date_from?: string;
-    date_to?: string;
+    date?: string;
     page?: number;
     per_page?: number;
   }) => {
@@ -92,15 +113,15 @@ export const api = {
     return request<PersonsResponse>(`/persons?${qs}`);
   },
 
-  personImageUrl: (id: number) => `${API_BASE}/persons/${id}/image`,
+  personImageUrl: (camera: string, date: string, id: number) =>
+    `${API_BASE}/persons/${camera}/${date}/${id}/image`,
 
-  deletePerson: (id: number) =>
-    request<{ ok: boolean }>(`/persons/${id}`, { method: "DELETE" }),
+  deletePerson: (camera: string, date: string, id: number) =>
+    request<{ ok: boolean }>(`/persons/${camera}/${date}/${id}`, { method: "DELETE" }),
 
   batchDeletePersons: (params: {
     camera?: string;
-    date_from?: string;
-    date_to?: string;
+    date?: string;
   }) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
@@ -116,6 +137,8 @@ export const api = {
     }),
 
   pipelineStatus: () => request<PipelineStatus>("/pipeline/status"),
+
+  sourceTree: () => request<SourceTree>("/source/tree"),
 
   stats: () => request<Stats>("/stats"),
 };

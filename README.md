@@ -68,7 +68,7 @@ catch-a-thief/
 │           └── PersonCard.tsx
 ├── models/                 # yolov8n.pt (gitignored)
 ├── results/                # index.db + persons/ thumbnails (gitignored)
-└── Sample/                 # CCTV footage mount (gitignored)
+└── CCTV/                   # CCTV footage mount (gitignored)
 ```
 
 ## Prerequisites
@@ -102,7 +102,7 @@ Remove the `devices:` block from `docker-compose.yml` — the pipeline detects G
 # 1. Download the YOLO model
 wget -O models/yolov8n.pt https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
 
-# 2. Place CCTV footage in Sample/ (or mount elsewhere)
+# 2. Place CCTV footage in CCTV/ (or mount elsewhere)
 
 # 3. Start everything
 docker compose up

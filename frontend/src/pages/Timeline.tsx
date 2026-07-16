@@ -1,33 +1,54 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Person } from "../api/client";
-import { Button } from "../components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export function Timeline() {
+  const [tree, setTree] = useState<{ camera: string; date: string }[]>([]);
   const [persons, setPersons] = useState<Person[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [camera, setCamera] = useState("");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const perPage = 100;
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => { setPage(1); }, [dateFrom, dateTo]);
+  const cameras = useMemo(() => {
+    const set = new Set(tree.map((e) => e.camera));
+    return ["", ...set].sort();
+  }, [tree]);
 
-  const load = useCallback(() => {
-    api.queryPersons({
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-      page,
-      per_page: perPage,
-    }).then((res) => {
-      setPersons(res.items);
-      setTotal(res.total);
+  useEffect(() => {
+    api.analysisTree().then((t) => {
+      const flat: { camera: string; date: string }[] = [];
+      for (const cam of t.cameras) {
+        for (const d of cam.dates) {
+          flat.push({ camera: cam.camera, date: d.date });
+        }
+      }
+      setTree(flat);
     }).catch(console.error);
-  }, [dateFrom, dateTo, page]);
+  }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    const allItems: Person[] = [];
+    const cameraFilter = camera || undefined;
+    for (const entry of tree) {
+      if (cameraFilter && entry.camera !== cameraFilter) continue;
+      try {
+        const res = await api.queryPersons({
+          camera: entry.camera,
+          date: entry.date,
+          per_page: 10000,
+        });
+        allItems.push(...res.items);
+      } catch (e) { console.error(e); }
+    }
+    allItems.sort((a, b) => b.timestamp_sec - a.timestamp_sec);
+    setPersons(allItems);
+    setTotal(allItems.length);
+    setLoading(false);
+  }, [tree, camera]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const handlePrev = useCallback(() => {
     setSelectedIndex((i) => (i === null ? null : (i - 1 + persons.length) % persons.length));
@@ -49,13 +70,13 @@ export function Timeline() {
   }, [selectedIndex, handlePrev, handleNext]);
 
   const handleDelete = (id: number) => {
-    api.deletePerson(id).then(() => {
+    const p = persons.find((x) => x.id === id);
+    if (!p) return;
+    api.deletePerson(p.camera, p.date, id).then(() => {
       setSelectedIndex(null);
-      load();
+      loadAll();
     });
   };
-
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   const grouped: Record<string, Person[]> = {};
   persons.forEach((p) => {
@@ -70,61 +91,78 @@ export function Timeline() {
         TIMELINE
       </h2>
 
-      <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>FROM:</label>
-        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="terminal-input" style={{ width: 180, marginTop: 0 }} />
-        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>TO:</label>
-        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="terminal-input" style={{ width: 180, marginTop: 0 }} />
+      <div style={{ marginBottom: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+        {cameras.map((cam) => (
+          <button
+            key={cam}
+            className="btn-small"
+            onClick={() => setCamera(cam)}
+            style={{
+              borderColor: camera === cam ? "var(--accent)" : "var(--border)",
+              color: camera === cam ? "var(--accent)" : "var(--text-dim)",
+              background: camera === cam ? "rgba(0,255,255,0.08)" : "transparent",
+            }}
+          >
+            {cam ? `CAM ${cam}` : "ALL"}
+          </button>
+        ))}
       </div>
 
-      <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-        <button className="btn-small" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← PREV</button>
-        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>PAGE {page} OF {totalPages} ({total} RECORDS)</span>
-        <button className="btn-small" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>NEXT →</button>
-      </div>
-
-      {Object.entries(grouped).map(([day, items]) => (
-        <div key={day} style={{ marginBottom: "1.5rem" }}>
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            marginBottom: 8,
-            paddingBottom: 6,
-            borderBottom: "1px solid var(--border)",
-          }}>
-            <span style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>{day}</span>
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{items.length} DETECTIONS</span>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {items.map((p) => {
-              const flatIdx = persons.indexOf(p);
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => setSelectedIndex(flatIdx)}
-                  style={{
-                    width: 80,
-                    height: 80,
-                    overflow: "hidden",
-                    borderRadius: 4,
-                    border: "1px solid var(--border)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div className="scan-overlay" style={{ width: "100%", height: "100%" }}>
-                    <img
-                      src={api.personImageUrl(p.id)}
-                      alt=""
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      {loading ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "1rem 0" }}>
+          <div className="radar-spinner" />
+          <span className="loading-pulse" style={{ color: "var(--text-dim)", fontSize: 13 }}>LOADING...</span>
         </div>
-      ))}
+      ) : (
+        <>
+          <div style={{ marginBottom: "1rem" }}>
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{total} RECORDS</span>
+          </div>
+
+          {Object.entries(grouped).map(([day, items]) => (
+            <div key={day} style={{ marginBottom: "1.5rem" }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 8,
+                paddingBottom: 6,
+                borderBottom: "1px solid var(--border)",
+              }}>
+                <span style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>{day}</span>
+                <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{items.length} DETECTIONS</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {items.map((p) => {
+                  const flatIdx = persons.indexOf(p);
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => setSelectedIndex(flatIdx)}
+                      style={{
+                        width: 80,
+                        height: 80,
+                        overflow: "hidden",
+                        borderRadius: 4,
+                        border: "1px solid var(--border)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div className="scan-overlay" style={{ width: "100%", height: "100%" }}>
+                        <img
+                          src={api.personImageUrl(p.camera, p.date, p.id)}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
 
       {selectedIndex !== null && persons[selectedIndex] && (
         <div
@@ -150,7 +188,7 @@ export function Timeline() {
                   minWidth: 180,
                 }}
               >
-                <div style={{ color: "#fff", fontWeight: 600, marginBottom: 4 }}>{p.camera}</div>
+                <div style={{ color: "#fff", fontWeight: 600, marginBottom: 4 }}>CAM {p.camera}</div>
                 <div>{dt.toLocaleDateString()} {dt.toLocaleTimeString()}</div>
                 <div style={{ marginBottom: 8 }}>CONF: {(p.quality_score * 100).toFixed(0)}%</div>
                 <button
@@ -164,19 +202,21 @@ export function Timeline() {
             );
           })()}
 
-          <Button
-            variant="outline" size="icon"
+          <button
             onClick={(e) => { e.stopPropagation(); handlePrev(); }}
             style={{
               position: "absolute", left: 16, top: "50%", translate: "0 -50%",
-              width: 48, height: 48, borderRadius: "50%",
+              background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
+              fontSize: 32, width: 48, height: 48, borderRadius: "50%", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              lineHeight: 1,
             }}
           >
-            <ChevronLeft className="h-6 w-6" />
-          </Button>
+            ‹
+          </button>
 
           <img
-            src={api.personImageUrl(persons[selectedIndex].id)}
+            src={api.personImageUrl(persons[selectedIndex].camera, persons[selectedIndex].date, persons[selectedIndex].id)}
             alt={`Person ${persons[selectedIndex].id}`}
             onClick={(e) => e.stopPropagation()}
             style={{
@@ -185,16 +225,18 @@ export function Timeline() {
             }}
           />
 
-          <Button
-            variant="outline" size="icon"
+          <button
             onClick={(e) => { e.stopPropagation(); handleNext(); }}
             style={{
               position: "absolute", right: 16, top: "50%", translate: "0 -50%",
-              width: 48, height: 48, borderRadius: "50%",
+              background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
+              fontSize: 32, width: 48, height: 48, borderRadius: "50%", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              lineHeight: 1,
             }}
           >
-            <ChevronRight className="h-6 w-6" />
-          </Button>
+            ›
+          </button>
         </div>
       )}
     </div>

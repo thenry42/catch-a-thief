@@ -6,9 +6,10 @@
 *.avi
 *.smi
 *.HTM
-Sample/
-Data/
-results/
+Analysis/
+
+# Prod override (local path)
+docker-compose.prod.yml
 
 # Models
 models/

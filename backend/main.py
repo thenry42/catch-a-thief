@@ -1,7 +1,8 @@
 import asyncio
 import threading
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -12,7 +13,7 @@ from pipeline import pipeline, db, smi
 
 app = FastAPI()
 
-RESULTS_DIR = Path("/app/results")
+ANALYSIS_DIR = Path("/app/Analysis")
 DATA_DIR = Path("/data")
 executor = ThreadPoolExecutor(max_workers=1)
 
@@ -21,54 +22,44 @@ pipeline_lock = threading.Lock()
 
 
 class PipelineRunParams(BaseModel):
-    input: str
     interval: float = 1.0
     motion_threshold: float = 0.001
     person_threshold: float = 0.5
     crop_padding: float = 1.0
-    clear_existing: bool = True
+    camera: str = None
+    date: str = None
 
 
-def _build_person_query(camera, date_from, date_to):
-    where = []
-    params = []
-    if camera:
-        where.append("SUBSTR(video_path, 5, 2) = ?")
-        params.append(camera)
-    if date_from:
-        where.append("timestamp_sec >= ?")
-        params.append(_date_to_sec(date_from))
-    if date_to:
-        where.append("timestamp_sec <= ?")
-        params.append(_date_to_sec(date_to, end_of_day=True))
-    where_clause = " WHERE " + " AND ".join(where) if where else ""
-    return where_clause, params
+def _scan_tree():
+    if not ANALYSIS_DIR.exists():
+        return {}
+    tree = {}
+    for cam_dir in sorted(ANALYSIS_DIR.iterdir()):
+        if not cam_dir.is_dir() or not cam_dir.name.startswith("CAM"):
+            continue
+        camera = cam_dir.name[3:]
+        dates = {}
+        for date_dir in sorted(cam_dir.iterdir()):
+            if not date_dir.is_dir():
+                continue
+            db_path = date_dir / "index.db"
+            if db_path.exists():
+                dates[date_dir.name] = db_path
+        if dates:
+            tree[camera] = dates
+    return tree
 
 
-def _camera_from_stem(video_path):
-    stem = Path(video_path).stem
-    return stem[4:6] if len(stem) >= 6 else stem
-
-
-def _get_db():
-    db_path = RESULTS_DIR / "index.db"
+def _get_db_by_key(camera, date_str):
+    db_path = ANALYSIS_DIR / f"CAM{camera}" / date_str / "index.db"
     if not db_path.exists():
         return None
     return db.init_db(db_path)
 
 
 def _video_meta(video_path):
-    smi_info = smi.parse_smi(smi.find_smi(video_path))
-    if smi_info:
-        return {
-            "camera": smi_info["camera"],
-            "date": smi_info["start_dt"].strftime("%Y-%m-%d"),
-        }
-    stem = video_path.stem
-    return {
-        "camera": stem[4:6] if len(stem) >= 6 else stem,
-        "date": str(date.fromtimestamp(video_path.stat().st_mtime)),
-    }
+    meta = smi.video_meta(video_path)
+    return {"camera": meta["camera"], "date": meta["date"]}
 
 
 @app.get("/api/videos")
@@ -110,67 +101,84 @@ def list_files(path: str = Query("")):
     return {"entries": entries, "current_path": path, "parent_path": parent}
 
 
+@app.get("/api/analysis/tree")
+def analysis_tree():
+    tree = _scan_tree()
+    cameras = []
+    for camera in sorted(tree):
+        dates = []
+        for date_str, db_path in sorted(tree[camera].items()):
+            conn = db.init_db(db_path)
+            count = conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
+            conn.close()
+            dates.append({"date": date_str, "count": count})
+        cameras.append({
+            "camera": camera,
+            "total": sum(d["count"] for d in dates),
+            "dates": dates,
+        })
+    return {"cameras": cameras}
+
+
 @app.get("/api/persons")
 def query_persons(
     camera: str = None,
-    date_from: str = None,
-    date_to: str = None,
+    date: str = None,
     page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=200),
+    per_page: int = Query(50, ge=1, le=100000),
 ):
-    conn = _get_db()
+    if not camera or not date:
+        return {"items": [], "total": 0, "page": page, "per_page": per_page}
+    conn = _get_db_by_key(camera, date)
     if conn is None:
         return {"items": [], "total": 0, "page": page, "per_page": per_page}
-
-    where_clause, params = _build_person_query(camera, date_from, date_to)
     offset = (page - 1) * per_page
-
-    total = conn.execute(f"SELECT COUNT(*) FROM persons{where_clause}", params).fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
     rows = conn.execute(
-        f"SELECT id, video_path, timestamp_sec, frame_path, quality_score FROM persons{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?",
-        params + [per_page, offset],
+        "SELECT id, video_path, timestamp_sec, frame_path, quality_score FROM persons ORDER BY id DESC LIMIT ? OFFSET ?",
+        (per_page, offset),
     ).fetchall()
     conn.close()
+    return {
+        "items": [
+            {
+                "id": r[0], "video_path": r[1], "timestamp_sec": r[2],
+                "frame_path": r[3], "quality_score": r[4],
+                "camera": camera, "date": date,
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
-    items = [
-        {
-            "id": r[0],
-            "video_path": r[1],
-            "timestamp_sec": r[2],
-            "frame_path": r[3],
-            "quality_score": r[4],
-            "camera": _camera_from_stem(r[1]),
-        }
-        for r in rows
-    ]
-    return {"items": items, "total": total, "page": page, "per_page": per_page}
 
-
-@app.get("/api/persons/{person_id}/image")
-def person_image(person_id: int):
-    conn = _get_db()
+@app.get("/api/persons/{camera}/{date}/{person_id}/image")
+def person_image(camera: str, date: str, person_id: int):
+    conn = _get_db_by_key(camera, date)
     if conn is None:
         raise HTTPException(404, "No database")
     row = conn.execute("SELECT frame_path FROM persons WHERE id = ?", (person_id,)).fetchone()
     conn.close()
     if row is None:
         raise HTTPException(404, "Person not found")
-    img_path = RESULTS_DIR / "persons" / row[0]
+    img_path = ANALYSIS_DIR / f"CAM{camera}" / date / "persons" / row[0]
     if not img_path.exists():
         raise HTTPException(404, "Image not found")
     return FileResponse(str(img_path), media_type="image/jpeg")
 
 
-@app.delete("/api/persons/{person_id}")
-def delete_person(person_id: int):
-    conn = _get_db()
+@app.delete("/api/persons/{camera}/{date}/{person_id}")
+def delete_person(camera: str, date: str, person_id: int):
+    conn = _get_db_by_key(camera, date)
     if conn is None:
         raise HTTPException(404, "No database")
     row = conn.execute("SELECT frame_path FROM persons WHERE id = ?", (person_id,)).fetchone()
     if row is None:
         conn.close()
         raise HTTPException(404, "Person not found")
-    img_path = RESULTS_DIR / "persons" / row[0]
+    img_path = ANALYSIS_DIR / f"CAM{camera}" / date / "persons" / row[0]
     if img_path.exists():
         img_path.unlink()
     conn.execute("DELETE FROM persons WHERE id = ?", (person_id,))
@@ -180,25 +188,22 @@ def delete_person(person_id: int):
 
 
 @app.delete("/api/persons")
-def batch_delete_persons(
-    camera: str = None,
-    date_from: str = None,
-    date_to: str = None,
-):
-    conn = _get_db()
+def batch_delete_persons(camera: str = None, date: str = None):
+    if not camera or not date:
+        return {"deleted": 0}
+    cam_dir = ANALYSIS_DIR / f"CAM{camera}" / date
+    if not cam_dir.exists():
+        return {"deleted": 0}
+    conn = _get_db_by_key(camera, date)
     if conn is None:
         return {"deleted": 0}
-
-    where_clause, params = _build_person_query(camera, date_from, date_to)
-
-    rows = conn.execute(f"SELECT frame_path FROM persons{where_clause}", params).fetchall()
+    rows = conn.execute("SELECT frame_path FROM persons").fetchall()
+    deleted = len(rows)
     for (fp,) in rows:
-        p = RESULTS_DIR / "persons" / fp
+        p = cam_dir / "persons" / fp
         if p.exists():
             p.unlink()
-
-    deleted = len(rows)
-    conn.execute(f"DELETE FROM persons{where_clause}", params)
+    conn.execute("DELETE FROM persons")
     conn.commit()
     conn.close()
     return {"deleted": deleted}
@@ -210,9 +215,25 @@ async def run_pipeline_endpoint(params: PipelineRunParams):
         if pipeline_status["running"]:
             raise HTTPException(409, "Pipeline already running")
 
-    video_paths = _resolve_videos(params.input)
+    video_paths = _resolve_videos("/data") if DATA_DIR.exists() else []
     if not video_paths:
-        raise HTTPException(400, "No video files found at input path")
+        raise HTTPException(400, "No video files found in /data")
+
+    if params.camera or params.date:
+        cameras = set(params.camera.split(",")) if params.camera else None
+        dates = set(params.date.split(",")) if params.date else None
+        filtered = []
+        for vp in video_paths:
+            meta = _video_meta(vp)
+            if cameras and meta["camera"] not in cameras:
+                continue
+            if dates and meta["date"] not in dates:
+                continue
+            filtered.append(vp)
+        video_paths = filtered
+
+    if not video_paths:
+        raise HTTPException(400, "No video files match the given filters")
 
     with pipeline_lock:
         pipeline_status["running"] = True
@@ -224,22 +245,21 @@ async def run_pipeline_endpoint(params: PipelineRunParams):
     def _progress(idx, total, name, count):
         with pipeline_lock:
             pipeline_status["progress"] = {
-            "current": idx + 1,
-            "total": total,
-            "video": name,
-            "persons_found": count,
-        }
+                "current": idx + 1,
+                "total": total,
+                "video": name,
+                "persons_found": count,
+            }
 
     def _run():
         try:
             total = pipeline.run_pipeline(
-                out_dir=RESULTS_DIR,
+                out_dir=ANALYSIS_DIR,
                 video_paths=video_paths,
                 interval=params.interval,
                 motion_threshold=params.motion_threshold,
                 person_threshold=params.person_threshold,
                 crop_padding=params.crop_padding,
-                clear_existing=params.clear_existing,
                 progress_callback=_progress,
             )
             with pipeline_lock:
@@ -273,41 +293,46 @@ def pipeline_status_endpoint():
 
 @app.get("/api/stats")
 def stats():
-    conn = _get_db()
-    if conn is None:
-        return {"total_persons": 0, "per_day": [], "per_camera": []}
-
-    total = conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
-
-    per_day = conn.execute(
-        "SELECT date(timestamp_sec, 'unixepoch') as day, COUNT(*) as cnt FROM persons GROUP BY day ORDER BY day"
-    ).fetchall()
-
-    per_camera = conn.execute(
-        "SELECT video_path, COUNT(*) as cnt FROM persons GROUP BY video_path ORDER BY cnt DESC"
-    ).fetchall()
-
-    conn.close()
+    tree = _scan_tree()
+    total = 0
+    per_day = defaultdict(int)
+    per_camera = defaultdict(int)
+    for camera, dates in tree.items():
+        for date_str, db_path in dates.items():
+            conn = db.init_db(db_path)
+            count = conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
+            conn.close()
+            total += count
+            per_day[date_str] += count
+            per_camera[camera] += count
     return {
         "total_persons": total,
-        "per_day": [{"date": r[0], "count": r[1]} for r in per_day],
-        "per_camera": [{"camera": _camera_from_stem(r[0]), "count": r[1]} for r in per_camera],
+        "per_day": [{"date": d, "count": c} for d, c in sorted(per_day.items())],
+        "per_camera": [
+            {"camera": c, "count": cnt}
+            for c, cnt in sorted(per_camera.items(), key=lambda x: -x[1])
+        ],
     }
 
 
 def _resolve_videos(input_path):
     p = Path(input_path)
-    if not p.is_absolute():
-        p = DATA_DIR / p
-    if p.is_file():
-        return [p]
-    if p.is_dir():
-        return sorted(p.rglob("*.avi"))
-    raise FileNotFoundError(f"Not a file or directory: {input_path}")
+    if not p.is_dir():
+        raise FileNotFoundError(f"Not a directory: {input_path}")
+    return sorted(p.rglob("*.avi"))
 
 
-def _date_to_sec(d, end_of_day=False):
-    dt = datetime.strptime(d, "%Y-%m-%d")
-    if end_of_day:
-        dt = dt.replace(hour=23, minute=59, second=59)
-    return dt.timestamp()
+@app.get("/api/source/tree")
+def source_tree():
+    if not DATA_DIR.exists():
+        return {"cameras": []}
+    cameras = []
+    for cam_dir in sorted(DATA_DIR.iterdir()):
+        if not cam_dir.is_dir() or not cam_dir.name.startswith("CAM"):
+            continue
+        dates = sorted(
+            d.name for d in cam_dir.iterdir()
+            if d.is_dir() and any(d.glob("*.avi"))
+        )
+        cameras.append({"camera": cam_dir.name[3:], "dates": dates})
+    return {"cameras": cameras}

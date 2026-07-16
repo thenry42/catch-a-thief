@@ -4,8 +4,8 @@ services:
     devices:
       - nvidia.com/gpu=all
     volumes:
-      - ./results:/app/results
-      - ./Sample:/data
+      - ./Analysis:/app/Analysis
+      - ./CCTV:/data
       - ./models:/app/models
       - ./backend:/app          # dev: live code reload
     ports:

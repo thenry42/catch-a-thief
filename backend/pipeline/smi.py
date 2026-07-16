@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 
 def parse_smi(smi_path):
@@ -20,3 +20,19 @@ def parse_smi(smi_path):
 
 def find_smi(video_path):
     return video_path.with_suffix(".smi")
+
+
+def video_meta(video_path):
+    smi_info = parse_smi(find_smi(video_path))
+    if smi_info:
+        return {
+            "camera": smi_info["camera"],
+            "date": smi_info["start_dt"].strftime("%Y-%m-%d"),
+            "start_time": smi_info["start_time"],
+        }
+    stem = video_path.stem
+    return {
+        "camera": stem[-2:] if len(stem) >= 2 else stem,
+        "date": str(date.fromtimestamp(video_path.stat().st_mtime)),
+        "start_time": 0,
+    }

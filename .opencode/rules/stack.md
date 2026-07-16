@@ -98,7 +98,7 @@ services:
       - nvidia.com/gpu=all       # CDI-based GPU passthrough
     volumes:
       - ./results:/app/results   # DB + crops (persistent)
-      - ./Sample:/data           # CCTV footage mount
+      - ./CCTV:/data           # CCTV footage mount
       - ./models:/app/models     # yolov8n.pt
       - ./backend:/app           # dev: live code reload
     ports:
@@ -154,7 +154,7 @@ catch-a-thief/
 │           └── PersonCard.tsx
 ├── models/                   # yolov8n.pt (gitignored)
 ├── results/                  # index.db + persons/ thumbnails (gitignored)
-└── Sample/                   # CCTV footage mount (gitignored)
+└── CCTV/                   # CCTV footage mount (gitignored)
 ```
 
 ## Key Assumptions
