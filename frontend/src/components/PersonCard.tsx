@@ -25,6 +25,7 @@ export function PersonCard({ id, imageUrl, camera, timestamp, quality, onDelete,
         <img
           src={imageUrl}
           alt={`Person ${id}`}
+          loading="lazy"
           style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(0.9) contrast(1.1)" }}
         />
       </div>

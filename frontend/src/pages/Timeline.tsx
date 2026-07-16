@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Person } from "../api/client";
 
+const DAYS_PER_PAGE = 5;
+
 export function Timeline() {
   const [tree, setTree] = useState<{ camera: string; date: string }[]>([]);
   const [persons, setPersons] = useState<Person[]>([]);
@@ -9,6 +11,7 @@ export function Timeline() {
   const [camera, setCamera] = useState("");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [visibleDayCount, setVisibleDayCount] = useState(DAYS_PER_PAGE);
 
   const cameras = useMemo(() => {
     const set = new Set(tree.map((e) => e.camera));
@@ -29,6 +32,7 @@ export function Timeline() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    setVisibleDayCount(DAYS_PER_PAGE);
     const allItems: Person[] = [];
     const cameraFilter = camera || undefined;
     for (const entry of tree) {
@@ -37,7 +41,7 @@ export function Timeline() {
         const res = await api.queryPersons({
           camera: entry.camera,
           date: entry.date,
-          per_page: 10000,
+          per_page: 1000,
         });
         allItems.push(...res.items);
       } catch (e) { console.error(e); }
@@ -119,7 +123,7 @@ export function Timeline() {
             <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{total} RECORDS</span>
           </div>
 
-          {Object.entries(grouped).map(([day, items]) => (
+          {Object.entries(grouped).slice(0, visibleDayCount).map(([day, items]) => (
             <div key={day} style={{ marginBottom: "1.5rem" }}>
               <div style={{
                 display: "flex",
@@ -152,6 +156,7 @@ export function Timeline() {
                         <img
                           src={api.personImageUrl(p.camera, p.date, p.id)}
                           alt=""
+                          loading="lazy"
                           style={{ width: "100%", height: "100%", objectFit: "cover" }}
                         />
                       </div>
@@ -161,6 +166,14 @@ export function Timeline() {
               </div>
             </div>
           ))}
+
+          {visibleDayCount < Object.entries(grouped).length && (
+            <div style={{ marginTop: "0.5rem" }}>
+              <button className="btn-small" onClick={() => setVisibleDayCount((c) => c + DAYS_PER_PAGE)}>
+                LOAD MORE DAYS
+              </button>
+            </div>
+          )}
         </>
       )}
 
@@ -218,6 +231,7 @@ export function Timeline() {
           <img
             src={api.personImageUrl(persons[selectedIndex].camera, persons[selectedIndex].date, persons[selectedIndex].id)}
             alt={`Person ${persons[selectedIndex].id}`}
+            loading="lazy"
             onClick={(e) => e.stopPropagation()}
             style={{
               maxWidth: "90vw", maxHeight: "90vh", objectFit: "contain",

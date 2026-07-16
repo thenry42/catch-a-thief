@@ -166,7 +166,7 @@ def person_image(camera: str, date: str, person_id: int):
     img_path = ANALYSIS_DIR / f"CAM{camera}" / date / "persons" / row[0]
     if not img_path.exists():
         raise HTTPException(404, "Image not found")
-    return FileResponse(str(img_path), media_type="image/jpeg")
+    return FileResponse(str(img_path), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.delete("/api/persons/{camera}/{date}/{person_id}")
