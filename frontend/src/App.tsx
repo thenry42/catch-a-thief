@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { Dashboard } from "./pages/Dashboard";
-import { Browse } from "./pages/Browse";
 import { Timeline } from "./pages/Timeline";
 import { PipelineConfig } from "./pages/PipelineConfig";
 
 const pages = [
   { key: "dashboard", label: "DASHBOARD", component: Dashboard },
-  { key: "browse", label: "BROWSE", component: Browse },
   { key: "timeline", label: "TIMELINE", component: Timeline },
   { key: "pipeline", label: "PIPELINE", component: PipelineConfig },
 ] as const;

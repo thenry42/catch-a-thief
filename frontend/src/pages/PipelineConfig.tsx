@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
 import type { PipelineStatus, FileEntry } from "../api/client";
+import { Switch } from "../components/ui/switch";
 
 export function PipelineConfig() {
   const [input, setInput] = useState("/data");
@@ -151,8 +152,8 @@ export function PipelineConfig() {
           <input type="number" step="0.05" min="0" max="1" value={personThreshold} onChange={(e) => setPersonThreshold(e.target.value)} className="terminal-input" />
         </label>
 
-        <label style={{ fontSize: 12, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 6 }}>
-          <input type="checkbox" checked={clearExisting} onChange={(e) => setClearExisting(e.target.checked)} />
+        <label style={{ fontSize: 12, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
+          <Switch checked={clearExisting} onCheckedChange={setClearExisting} />
           Clear existing results before run
         </label>
 
