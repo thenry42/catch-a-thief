@@ -7,7 +7,7 @@ export function PipelineConfig() {
   const [interval, setInterval] = useState("1.0");
   const [motionThreshold, setMotionThreshold] = useState("0.001");
   const [personThreshold, setPersonThreshold] = useState("0.5");
-  const [cropPadding, setCropPadding] = useState("1.0");
+  const [clearExisting, setClearExisting] = useState(true);
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -21,6 +21,13 @@ export function PipelineConfig() {
       setEntries(r.entries);
       setCurrentPath(r.current_path);
       setParentPath(r.parent_path);
+    }).catch(console.error);
+    api.pipelineStatus().then((s) => {
+      setStatus(s);
+      if (s.running) {
+        setRunning(true);
+        pollContinuously();
+      }
     }).catch(console.error);
   }, []);
 
@@ -41,11 +48,14 @@ export function PipelineConfig() {
     }
   };
 
-  const pollStatus = () => {
+  const pollContinuously = () => {
     api.pipelineStatus().then((s) => {
       setStatus(s);
-      setRunning(s.running);
-      if (s.running) setTimeout(pollStatus, 2000);
+      if (s.running) {
+        setTimeout(pollContinuously, 2000);
+      } else {
+        setRunning(false);
+      }
     }).catch(console.error);
   };
 
@@ -58,9 +68,9 @@ export function PipelineConfig() {
         interval: parseFloat(interval),
         motion_threshold: parseFloat(motionThreshold),
         person_threshold: parseFloat(personThreshold),
-        crop_padding: parseFloat(cropPadding),
+        clear_existing: clearExisting,
       });
-      pollStatus();
+      pollContinuously();
     } catch (e) {
       setError(String(e));
       setRunning(false);
@@ -140,9 +150,10 @@ export function PipelineConfig() {
           PERSON THRESHOLD
           <input type="number" step="0.05" min="0" max="1" value={personThreshold} onChange={(e) => setPersonThreshold(e.target.value)} className="terminal-input" />
         </label>
-        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          CROP PADDING
-          <input type="number" step="0.1" value={cropPadding} onChange={(e) => setCropPadding(e.target.value)} className="terminal-input" />
+
+        <label style={{ fontSize: 12, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="checkbox" checked={clearExisting} onChange={(e) => setClearExisting(e.target.checked)} />
+          Clear existing results before run
         </label>
 
         <button
