@@ -1,24 +1,26 @@
 # Catch a Thief
 
-Real-world person detection pipeline for 640+ GB of Samsung DVR CCTV footage (13 days, 2 cameras). Built to help identify a burglary suspect in a high-traffic building entrance.
+A little fucker burglarized my cousin's apartment. We got the CCTV footage, I built this.
 
-**Status:** 3/13 days analyzed, 12,000+ persons detected so far.
+Real-world person detection pipeline for 640+ GB of Samsung DVR CCTV footage (13 days, 2 cameras, thousands of people).
+
+**Status:** 3/13 days analyzed, 12,000+ persons detected so far. It's gonna take a while.
 
 ## Why This Is Interesting
 
-This isn't a Kaggle dataset with clean labels. It's a messy, real-world surveillance problem:
+This isn't a Kaggle dataset with clean labels. It's a messy, real-world surveillance problem with constraints no benchmark prepares you for:
 
 - **No ground truth** — no labeled data, no test set, just raw footage and a hunch
 - **Samsung DVR quirks** — metadata lives in `.smi` subtitle files (parsed with regex), not in video headers. Filenames encode camera number (`YYMMDD/HHMMSSCC.avi`)
 - **Motion-triggered clips** — variable-length clips (1 min early on, 1-hour blocks daytime). Frame-differencing at 1 fps avoids re-processing near-identical frames across 640+ GB
 - **Low-res entrance CCTV** — too grainy for face detection. Person detection (YOLOv8n) is the right level. 2 cameras cover the same entrance from different angles
-- **Scale** — 13 days, 640+ GB, thousands of people passing through. 3 buildings + school + construction workers = constant traffic
+- **Scale** — 13 days, 640+ GB, thousands of people passing through 3 buildings + a school + construction workers. Constant traffic.
 
 ## Background
 
-A burglary was committed in my cousin's apartment. The door was reinforced and only one apartment was targeted — the thief knew what to steal and when the occupant would be away. The police don't have the resources to process 640 GB of CCTV, so this project fills that gap.
+The reinforced door was broken, only one apartment was targeted, and only small valuables were taken. The thief knew what to steal and when my cousin would be away. Police don't have the resources to process 640 GB of CCTV — and if they did, they wouldn't give me back my 1 TB SSD, which is a fucking disgrace.
 
-My cousin believes it's someone he knows. The alternative theory is a construction worker (there's major renovation in the building). Either way, the goal is the same: identify every person who entered over 13 days and give my cousin a chance to recognize the thief.
+My cousin thinks it's someone he knows. I'm leaning toward a construction worker (there's major renovation going on, workers everywhere). Either way, the goal is the same: identify every person who entered over 13 days and let my cousin take a look.
 
 ## Stack
 
