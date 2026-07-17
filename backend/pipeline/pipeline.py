@@ -32,6 +32,17 @@ def _save_crop(frame, x, y, w, bh, out_dir, video_stem, timestamp,
     return name
 
 
+_db_locks: dict = {}
+_db_locks_lock = threading.Lock()
+
+
+def _db_lock_for(db_path):
+    with _db_locks_lock:
+        if db_path not in _db_locks:
+            _db_locks[db_path] = threading.Lock()
+        return _db_locks[db_path]
+
+
 def _process_video(vp, yolo, dev, out_dir, interval, motion_threshold,
                    person_threshold, crop_padding, stop_event):
     meta = smi.video_meta(vp)
@@ -46,8 +57,13 @@ def _process_video(vp, yolo, dev, out_dir, interval, motion_threshold,
     vid_dir.mkdir(parents=True, exist_ok=True)
     persons_dir.mkdir(parents=True, exist_ok=True)
 
+    db_lock = _db_lock_for(str(db_path))
     conn = db.init_db(db_path)
-    crop_names = db.delete_video_results(conn, vp.name)
+
+    with db_lock:
+        crop_names = db.delete_video_results(conn, vp.name)
+        conn.commit()
+
     for cn in crop_names:
         (persons_dir / cn).unlink(missing_ok=True)
 
@@ -69,9 +85,12 @@ def _process_video(vp, yolo, dev, out_dir, interval, motion_threshold,
             )
             if crop_name is None:
                 continue
-            db.insert_person(conn, vp.name, abs_ts, crop_name, conf)
-            person_count += 1
-    conn.commit()
+            with db_lock:
+                db.insert_person(conn, vp.name, abs_ts, crop_name, conf)
+                person_count += 1
+
+    with db_lock:
+        conn.commit()
     conn.close()
     return vp, person_count
 
