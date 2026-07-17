@@ -68,28 +68,26 @@ def _process_video(vp, yolo, dev, out_dir, interval, motion_threshold,
         (persons_dir / cn).unlink(missing_ok=True)
 
     person_count = 0
-    for rel_ts, frame in video.iter_frames(vp, interval, motion_threshold):
-        if stop_event and stop_event.is_set():
-            break
-        results = yolo(frame, verbose=False, classes=[0], device=dev)[0]
-        for bidx, box in enumerate(results.boxes):
-            conf = float(box.conf[0])
-            if conf < person_threshold:
-                continue
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            w, bh = x2 - x1, y2 - y1
-            abs_ts = video_start + rel_ts
-            crop_name = _save_crop(
-                frame, x1, y1, w, bh,
-                persons_dir, vp.stem, abs_ts, bidx, crop_padding,
-            )
-            if crop_name is None:
-                continue
-            with db_lock:
+    with db_lock:
+        for rel_ts, frame in video.iter_frames(vp, interval, motion_threshold):
+            if stop_event and stop_event.is_set():
+                break
+            results = yolo(frame, verbose=False, classes=[0], device=dev)[0]
+            for bidx, box in enumerate(results.boxes):
+                conf = float(box.conf[0])
+                if conf < person_threshold:
+                    continue
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                w, bh = x2 - x1, y2 - y1
+                abs_ts = video_start + rel_ts
+                crop_name = _save_crop(
+                    frame, x1, y1, w, bh,
+                    persons_dir, vp.stem, abs_ts, bidx, crop_padding,
+                )
+                if crop_name is None:
+                    continue
                 db.insert_person(conn, vp.name, abs_ts, crop_name, conf)
                 person_count += 1
-
-    with db_lock:
         conn.commit()
     conn.close()
     return vp, person_count
