@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,8 @@ from pydantic import BaseModel
 
 from pipeline import pipeline, db, smi
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 app = FastAPI()
 
 ANALYSIS_DIR = Path("/app/Analysis")
@@ -19,13 +22,15 @@ executor = ThreadPoolExecutor(max_workers=1)
 
 pipeline_status = {"running": False, "last_run": None, "progress": None}
 pipeline_lock = threading.Lock()
+stop_event = threading.Event()
 
 
 class PipelineRunParams(BaseModel):
-    interval: float = 1.0
+    interval: float = 3.0
     motion_threshold: float = 0.001
-    person_threshold: float = 0.5
+    person_threshold: float = 0.6
     crop_padding: float = 1.0
+    cpu_threads: int = 1
     camera: str = None
     date: str = None
 
@@ -235,6 +240,7 @@ async def run_pipeline_endpoint(params: PipelineRunParams):
     if not video_paths:
         raise HTTPException(400, "No video files match the given filters")
 
+    stop_event.clear()
     with pipeline_lock:
         pipeline_status["running"] = True
         pipeline_status["last_run"] = None
@@ -260,6 +266,8 @@ async def run_pipeline_endpoint(params: PipelineRunParams):
                 motion_threshold=params.motion_threshold,
                 person_threshold=params.person_threshold,
                 crop_padding=params.crop_padding,
+                cpu_threads=params.cpu_threads,
+                stop_event=stop_event,
                 progress_callback=_progress,
             )
             with pipeline_lock:
@@ -273,12 +281,22 @@ async def run_pipeline_endpoint(params: PipelineRunParams):
         finally:
             with pipeline_lock:
                 pipeline_status["running"] = False
+            stop_event.clear()
 
     try:
         total = await loop.run_in_executor(executor, _run)
         return {"total_persons": total}
     except Exception as e:
         raise HTTPException(500, f"Pipeline failed: {e}")
+
+
+@app.post("/api/pipeline/stop")
+def stop_pipeline():
+    with pipeline_lock:
+        if not pipeline_status["running"]:
+            raise HTTPException(409, "Pipeline not running")
+    stop_event.set()
+    return {"ok": True}
 
 
 @app.get("/api/pipeline/status")
@@ -322,6 +340,15 @@ def _resolve_videos(input_path):
     return sorted(p.rglob("*.avi"))
 
 
+def _get_dir_size(path):
+    # ponytail: walks every file, slow on 640GB. Cache result or compute once if latency matters.
+    total = 0
+    for f in Path(path).rglob("*"):
+        if f.is_file():
+            total += f.stat().st_size
+    return total
+
+
 @app.get("/api/source/tree")
 def source_tree():
     if not DATA_DIR.exists():
@@ -330,9 +357,11 @@ def source_tree():
     for cam_dir in sorted(DATA_DIR.iterdir()):
         if not cam_dir.is_dir() or not cam_dir.name.startswith("CAM"):
             continue
-        dates = sorted(
-            d.name for d in cam_dir.iterdir()
-            if d.is_dir() and any(d.glob("*.avi"))
-        )
-        cameras.append({"camera": cam_dir.name[3:], "dates": dates})
+        dates = []
+        for d in sorted(cam_dir.iterdir()):
+            if d.is_dir() and any(d.glob("*.avi")):
+                size = _get_dir_size(d)
+                dates.append({"date": d.name, "size": size})
+        total = sum(d["size"] for d in dates)
+        cameras.append({"camera": cam_dir.name[3:], "total_size": total, "dates": dates})
     return {"cameras": cameras}

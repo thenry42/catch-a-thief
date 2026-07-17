@@ -69,6 +69,7 @@ export interface PipelineRunParams {
   motion_threshold?: number;
   person_threshold?: number;
   crop_padding?: number;
+  cpu_threads?: number;
   camera?: string;
   date?: string;
 }
@@ -83,9 +84,15 @@ export interface AnalysisTree {
   cameras: CameraNode[];
 }
 
+export interface SourceTreeDate {
+  date: string;
+  size: number;
+}
+
 export interface SourceTreeCamera {
   camera: string;
-  dates: string[];
+  total_size: number;
+  dates: SourceTreeDate[];
 }
 
 export interface SourceTree {
@@ -137,6 +144,8 @@ export const api = {
     }),
 
   pipelineStatus: () => request<PipelineStatus>("/pipeline/status"),
+
+  stopPipeline: () => request<{ ok: boolean }>("/pipeline/stop", { method: "POST" }),
 
   sourceTree: () => request<SourceTree>("/source/tree"),
 

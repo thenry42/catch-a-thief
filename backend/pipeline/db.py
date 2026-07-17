@@ -14,6 +14,7 @@ def init_db(db_path):
             quality_score REAL
         )
     """)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.commit()
     return conn
 

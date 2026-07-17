@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "../api/client";
-import type { PipelineStatus, SourceTree } from "../api/client";
+import type { PipelineStatus, SourceTree, AnalysisTree } from "../api/client";
 
 const btn: React.CSSProperties = {
   padding: "5px 12px",
@@ -22,14 +22,24 @@ const btnActive: React.CSSProperties = {
   border: "1px solid var(--accent)",
 };
 
+const formatSize = (bytes: number) => {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const n = (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0);
+  return `${n} ${units[i]}`;
+};
+
 export function PipelineConfig() {
-  const [interval, setInterval] = useState("1.0");
-  const [motionThreshold, setMotionThreshold] = useState("0.001");
+  const [interval, setInterval] = useState("3.0");
+  const [motionThreshold, setMotionThreshold] = useState("0.005");
   const [personThreshold, setPersonThreshold] = useState("0.5");
+  const [cpuThreads, setCpuThreads] = useState("2");
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [tree, setTree] = useState<SourceTree | null>(null);
+  const [analysisTree, setAnalysisTree] = useState<AnalysisTree | null>(null);
   const [selectedCams, setSelectedCams] = useState<string[]>([]);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
 
@@ -39,6 +49,7 @@ export function PipelineConfig() {
       if (s.running) { setRunning(true); pollContinuously(); }
     }).catch(console.error);
     api.sourceTree().then(setTree).catch(console.error);
+    api.analysisTree().then(setAnalysisTree).catch(console.error);
   }, []);
 
   const pollContinuously = () => {
@@ -60,6 +71,7 @@ export function PipelineConfig() {
         interval: parseFloat(interval),
         motion_threshold: parseFloat(motionThreshold),
         person_threshold: parseFloat(personThreshold),
+        cpu_threads: parseInt(cpuThreads),
         camera: selectedCams.length ? selectedCams.join(",") : undefined,
         date: selectedDates.length ? selectedDates.join(",") : undefined,
       });
@@ -70,11 +82,47 @@ export function PipelineConfig() {
     }
   };
 
+  const handleStop = async () => {
+    try {
+      await api.stopPipeline();
+      setRunning(false);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const allDates = [...new Set(
     (tree?.cameras ?? [])
       .filter((c) => selectedCams.length === 0 || selectedCams.includes(c.camera))
-      .flatMap((c) => c.dates)
+      .flatMap((c) => c.dates.map((d) => d.date))
   )].sort();
+
+  const dateSizes = useMemo(() => {
+    const sizes = new Map<string, number>();
+    const cams = tree?.cameras ?? [];
+    const filtered = selectedCams.length === 0 ? cams : cams.filter((c) => selectedCams.includes(c.camera));
+    for (const cam of filtered) {
+      for (const d of cam.dates) {
+        sizes.set(d.date, (sizes.get(d.date) || 0) + d.size);
+      }
+    }
+    return sizes;
+  }, [tree, selectedCams]);
+
+  const analyzedDates = useMemo(() => {
+    const analyzed = new Set<string>();
+    for (const cam of analysisTree?.cameras ?? []) {
+      for (const d of cam.dates) {
+        if (d.count > 0) analyzed.add(`${cam.camera}:${d.date}`);
+      }
+    }
+    return analyzed;
+  }, [analysisTree]);
+
+  const hasAnalysis = (date: string) =>
+    selectedCams.length === 0
+      ? [...analyzedDates.values()].some((e) => e.endsWith(`:${date}`))
+      : selectedCams.some((c) => analyzedDates.has(`${c}:${date}`));
 
   const canRun = !running && selectedCams.length > 0 && selectedDates.length > 0;
 
@@ -90,7 +138,7 @@ export function PipelineConfig() {
           <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
             {(tree?.cameras ?? []).map((c) => (
               <button key={c.camera} style={selectedCams.includes(c.camera) ? btnActive : btn} onClick={() => toggle(selectedCams, c.camera, setSelectedCams)}>
-                CAM {c.camera}
+                CAM {c.camera} <span style={{ opacity: 0.5 }}>{formatSize(c.total_size)}</span>
               </button>
             ))}
             {selectedCams.length > 0 && <span style={{ fontSize: 11, color: "var(--accent)", marginLeft: 4 }}>
@@ -104,7 +152,8 @@ export function PipelineConfig() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4, alignItems: "center" }}>
             {allDates.map((d) => (
               <button key={d} style={selectedDates.includes(d) ? btnActive : btn} onClick={() => toggle(selectedDates, d, setSelectedDates)}>
-                {d}
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: hasAnalysis(d) ? "#00e676" : "#ff003c", marginRight: 4 }} />
+                {d} <span style={{ opacity: 0.5 }}>{formatSize(dateSizes.get(d) ?? 0)}</span>
               </button>
             ))}
             {selectedDates.length > 0 && <span style={{ fontSize: 11, color: "var(--accent)", marginLeft: 4 }}>
@@ -125,10 +174,20 @@ export function PipelineConfig() {
           PERSON THRESHOLD
           <input type="number" step="0.05" min="0" max="1" value={personThreshold} onChange={(e) => setPersonThreshold(e.target.value)} className="terminal-input" />
         </label>
-
-        <button onClick={handleRun} disabled={!canRun} className="btn-primary" style={{ alignSelf: "flex-start", opacity: canRun ? 1 : 0.4 }}>
-          {running ? "RUNNING..." : "RUN PIPELINE"}
-        </button>
+        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          CPU THREADS
+          <input type="number" step="1" min="1" max="16" value={cpuThreads} onChange={(e) => setCpuThreads(e.target.value)} className="terminal-input" />
+        </label>
+        
+        {running ? (
+          <button onClick={handleStop} className="btn-danger" style={{ alignSelf: "flex-start" }}>
+            STOP
+          </button>
+        ) : (
+          <button onClick={handleRun} disabled={!canRun} className="btn-primary" style={{ alignSelf: "flex-start", opacity: canRun ? 1 : 0.4 }}>
+            RUN PIPELINE
+          </button>
+        )}
         {!canRun && !running && <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>select at least one camera and one date</span>}
 
         {error && <p style={{ color: "var(--danger)", fontSize: 12, margin: 0 }}>{error}</p>}
