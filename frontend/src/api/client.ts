@@ -61,6 +61,7 @@ export interface PipelineStatus {
     total: number;
     video: string;
     persons_found: number;
+    chunk?: string;
   } | null;
 }
 
@@ -72,6 +73,7 @@ export interface PipelineRunParams {
   cpu_threads?: number;
   camera?: string;
   date?: string;
+  chunk_size?: number;
 }
 
 export interface CameraNode {

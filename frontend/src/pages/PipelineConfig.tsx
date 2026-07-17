@@ -35,6 +35,7 @@ export function PipelineConfig() {
   const [motionThreshold, setMotionThreshold] = useState("0.005");
   const [personThreshold, setPersonThreshold] = useState("0.5");
   const [cpuThreads, setCpuThreads] = useState("2");
+  const [chunkSize, setChunkSize] = useState("0");
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -72,6 +73,7 @@ export function PipelineConfig() {
         motion_threshold: parseFloat(motionThreshold),
         person_threshold: parseFloat(personThreshold),
         cpu_threads: parseInt(cpuThreads),
+        chunk_size: parseInt(chunkSize) || undefined,
         camera: selectedCams.length ? selectedCams.join(",") : undefined,
         date: selectedDates.length ? selectedDates.join(",") : undefined,
       });
@@ -122,7 +124,7 @@ export function PipelineConfig() {
   const hasAnalysis = (date: string) =>
     selectedCams.length === 0
       ? [...analyzedDates.values()].some((e) => e.endsWith(`:${date}`))
-      : selectedCams.some((c) => analyzedDates.has(`${c}:${date}`));
+      : selectedCams.every((c) => analyzedDates.has(`${c}:${date}`));
 
   const canRun = !running && selectedCams.length > 0 && selectedDates.length > 0;
 
@@ -178,6 +180,10 @@ export function PipelineConfig() {
           CPU THREADS
           <input type="number" step="1" min="1" max="16" value={cpuThreads} onChange={(e) => setCpuThreads(e.target.value)} className="terminal-input" />
         </label>
+        <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          CHUNK SIZE (0 = all at once)
+          <input type="number" step="1" min="0" value={chunkSize} onChange={(e) => setChunkSize(e.target.value)} className="terminal-input" />
+        </label>
         
         {running ? (
           <button onClick={handleStop} className="btn-danger" style={{ alignSelf: "flex-start" }}>
@@ -220,6 +226,7 @@ export function PipelineConfig() {
                 <div style={{ height: 4, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${(status.progress.current / status.progress.total) * 100}%`, background: "var(--accent)", transition: "width 0.5s" }} />
                 </div>
+                {status.progress.chunk && <div style={{ color: "var(--text-dim)", marginTop: 4 }}>Chunk {status.progress.chunk}</div>}
                 <div style={{ color: "var(--text-dim)", marginTop: 4 }}>{status.progress.persons_found} persons found</div>
               </div>
             )}

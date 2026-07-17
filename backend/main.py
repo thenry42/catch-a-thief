@@ -33,6 +33,7 @@ class PipelineRunParams(BaseModel):
     cpu_threads: int = 1
     camera: str = None
     date: str = None
+    chunk_size: int = 0
 
 
 def _scan_tree():
@@ -248,32 +249,48 @@ async def run_pipeline_endpoint(params: PipelineRunParams):
 
     loop = asyncio.get_event_loop()
 
-    def _progress(idx, total, name, count):
-        with pipeline_lock:
-            pipeline_status["progress"] = {
-                "current": idx + 1,
-                "total": total,
-                "video": name,
-                "persons_found": count,
-            }
-
     def _run():
         try:
-            total = pipeline.run_pipeline(
-                out_dir=ANALYSIS_DIR,
-                video_paths=video_paths,
-                interval=params.interval,
-                motion_threshold=params.motion_threshold,
-                person_threshold=params.person_threshold,
-                crop_padding=params.crop_padding,
-                cpu_threads=params.cpu_threads,
-                stop_event=stop_event,
-                progress_callback=_progress,
-            )
+            chunks = [video_paths]
+            if params.chunk_size > 0:
+                chunks = [video_paths[i:i + params.chunk_size]
+                          for i in range(0, len(video_paths), params.chunk_size)]
+
+            total_persons = 0
+            chunk_count = len(chunks)
+            video_index = 0
+            for chunk_idx, chunk_paths in enumerate(chunks):
+                if stop_event.is_set():
+                    break
+
+                def _chunk_progress(idx, total, name, count):
+                    with pipeline_lock:
+                        pipeline_status["progress"] = {
+                            "current": video_index + idx + 1,
+                            "total": len(video_paths),
+                            "video": name,
+                            "persons_found": total_persons + count,
+                            "chunk": f"{chunk_idx + 1}/{chunk_count}",
+                        }
+
+                total = pipeline.run_pipeline(
+                    out_dir=ANALYSIS_DIR,
+                    video_paths=chunk_paths,
+                    interval=params.interval,
+                    motion_threshold=params.motion_threshold,
+                    person_threshold=params.person_threshold,
+                    crop_padding=params.crop_padding,
+                    cpu_threads=params.cpu_threads,
+                    stop_event=stop_event,
+                    progress_callback=_chunk_progress,
+                )
+                total_persons += total
+                video_index += len(chunk_paths)
+
             with pipeline_lock:
                 pipeline_status["last_run"] = datetime.now().isoformat()
                 pipeline_status["progress"] = None
-            return total
+            return total_persons
         except Exception as e:
             with pipeline_lock:
                 pipeline_status["last_run"] = f"error: {e}"
