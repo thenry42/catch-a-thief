@@ -68,7 +68,7 @@ def _process_video(vp, yolo, dev, out_dir, interval, motion_threshold,
         (persons_dir / cn).unlink(missing_ok=True)
 
     person_count = 0
-    for rel_ts, frame in video.iter_frames(vp, interval, motion_threshold, device=dev):
+    for rel_ts, frame in video.iter_frames(vp, interval, motion_threshold):
         if stop_event and stop_event.is_set():
             break
         results = yolo(frame, verbose=False, classes=[0], device=dev)[0]
